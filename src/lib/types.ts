@@ -40,7 +40,8 @@ export interface TrainingPlan {
 
 export interface ExerciseItem {
   id?: number;
-  planId: number;
+  planId: number | null;
+  templateId: number | null;
   name: string;
   sets: number;
   reps: number;
@@ -83,6 +84,7 @@ export interface VideoAnnotation {
   id?: number;
   studentId: number;
   videoPath: string;
+  videoBlob?: Blob;
   recordDate: string;
 }
 

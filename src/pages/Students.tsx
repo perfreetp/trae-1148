@@ -145,7 +145,7 @@ function ProfilesTab({ students, groups, addStudent, updateStudent, deleteStuden
       </div>
       {filtered.length === 0 && <div className="text-center py-12 text-[var(--text-muted)]">暂无学员数据</div>}
       <StudentFormModal open={showAdd} onClose={() => setShowAdd(false)} initial={EMPTY_STUDENT} groups={groups} onSave={handleSave} />
-      <StudentFormModal open={!!editTarget} onClose={() => setEditTarget(null)} initial={editTarget ? { name: editTarget.name, age: editTarget.age, gender: editTarget.gender, groupId: editTarget.groupId, avatar: editTarget.avatar, phone: editTarget.phone, parentName: editTarget.parentName, parentPhone: editTarget.parentPhone } : EMPTY_STUDENT} groups={groups} onSave={handleSave} />
+      <StudentFormModal key={editTarget?.id ?? 'add-student'} open={!!editTarget} onClose={() => setEditTarget(null)} initial={editTarget ? { name: editTarget.name, age: editTarget.age, gender: editTarget.gender, groupId: editTarget.groupId, avatar: editTarget.avatar, phone: editTarget.phone, parentName: editTarget.parentName, parentPhone: editTarget.parentPhone } : EMPTY_STUDENT} groups={groups} onSave={handleSave} />
       <DeleteModal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} label={deleteTarget?.name ?? ''} onConfirm={() => deleteTarget?.id && deleteStudent(deleteTarget.id)} />
     </div>
   );
@@ -203,7 +203,7 @@ function GroupsTab({ students, groups, addGroup, updateGroup, deleteGroup }: {
         </div>
       </div>
       <GroupFormModal open={showAdd} onClose={() => setShowAdd(false)} initial={EMPTY_GROUP} onSave={handleSave} />
-      <GroupFormModal open={!!editTarget} onClose={() => setEditTarget(null)} initial={editTarget ? { name: editTarget.name, color: editTarget.color, description: editTarget.description, id: editTarget.id } : EMPTY_GROUP} onSave={handleSave} />
+      <GroupFormModal key={editTarget?.id ?? 'add-group'} open={!!editTarget} onClose={() => setEditTarget(null)} initial={editTarget ? { name: editTarget.name, color: editTarget.color, description: editTarget.description, id: editTarget.id } : EMPTY_GROUP} onSave={handleSave} />
       <DeleteModal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} label={deleteTarget?.name ?? ''} onConfirm={() => deleteTarget?.id && deleteGroup(deleteTarget.id)} />
     </div>
   );

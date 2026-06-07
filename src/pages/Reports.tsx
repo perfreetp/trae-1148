@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useStore } from '@/store';
-import { exportAllData, importAllData } from '@/lib/db';
-import { FileText, TrendingUp, Database, Download, Upload, Plus, Calendar, AlertTriangle, Trash2, CheckCircle } from 'lucide-react';
+import { exportAllData, importAllData, db } from '@/lib/db';
+import { FileText, TrendingUp, Database, Download, Upload, Plus, Calendar, AlertTriangle, Trash2, CheckCircle, Eye } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import dayjs from 'dayjs';
 
@@ -23,6 +23,7 @@ export default function Reports() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [lastBackup, setLastBackup] = useState(localStorage.getItem('lastBackup') || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [historyReport, setHistoryReport] = useState<any>(null);
 
   const students = useStore(s => s.students);
   const groups = useStore(s => s.groups);
@@ -31,6 +32,9 @@ export default function Reports() {
   const testResults = useStore(s => s.testResults);
   const injuryRecords = useStore(s => s.injuryRecords);
   const parentFeedback = useStore(s => s.parentFeedback);
+  const weeklyReports = useStore(s => s.weeklyReports);
+  const addWeeklyReport = useStore(s => s.addWeeklyReport);
+  const reloadAll = useStore(s => s.reloadAll);
 
   const generateReport = () => {
     const start = dayjs(weekStart);
@@ -46,13 +50,60 @@ export default function Reports() {
     const periodTests = testResults.filter(t => dayjs(t.testDate).isAfter(start.subtract(1, 'day')) && dayjs(t.testDate).isBefore(end.add(1, 'day')) && groupStudents.some(s => s.id === t.studentId));
     const activeInjuries = injuryRecords.filter(i => i.status !== 'recovered' && groupStudents.some(s => s.id === i.studentId));
     const periodFeedback = parentFeedback.filter(f => dayjs(f.feedbackDate).isAfter(start.subtract(1, 'day')) && dayjs(f.feedbackDate).isBefore(end.add(1, 'day')) && groupStudents.some(s => s.id === f.studentId));
-    const report = { weekStart, weekEnd, groupId: selectedGroup, attendance: { total, present, absent, leave, rate: ((present / total) * 100).toFixed(1) }, training: { sessionCount: periodSessions.length, avgSessionsPerStudent: groupStudents.length ? (periodSessions.length / groupStudents.length).toFixed(1) : '0', avgFatigue }, tests: periodTests, injuries: activeInjuries, feedback: periodFeedback, generatedAt: dayjs().format('YYYY-MM-DD HH:mm') };
+    const report = {
+      weekStart, weekEnd, groupId: selectedGroup || null,
+      attendance: { total, present, absent, leave, rate: ((present / total) * 100).toFixed(1) },
+      training: { sessionCount: periodSessions.length, avgSessionsPerStudent: groupStudents.length ? (periodSessions.length / groupStudents.length).toFixed(1) : '0', avgFatigue, details: periodSessions.slice(0, 10) },
+      tests: periodTests, injuries: activeInjuries, feedback: periodFeedback,
+      generatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
+    };
     setPreviewReport(report);
+  };
+
+  const saveReport = async () => {
+    if (!previewReport) return;
+    const content = JSON.stringify(previewReport);
+    await addWeeklyReport({ groupId: previewReport.groupId, weekStart: previewReport.weekStart, weekEnd: previewReport.weekEnd, content, generatedAt: previewReport.generatedAt });
+    setBackupMsg('周报已保存！');
+    setTimeout(() => setBackupMsg(''), 3000);
+  };
+
+  const exportReportFile = () => {
+    if (!previewReport) return;
+    const r = previewReport;
+    const groupName = r.groupId ? groups.find(g => g.id === r.groupId)?.name : '全部';
+    let text = `智慧体育训练周报\n${'='.repeat(40)}\n`;
+    text += `时间范围: ${r.weekStart} ~ ${r.weekEnd}\n训练组: ${groupName}\n生成时间: ${r.generatedAt}\n\n`;
+    text += `【出勤统计】\n  出勤: ${r.attendance.present}  缺勤: ${r.attendance.absent}  请假: ${r.attendance.leave}  出勤率: ${r.attendance.rate}%\n\n`;
+    text += `【训练记录】\n  训练次数: ${r.training.sessionCount}  人均: ${r.training.avgSessionsPerStudent}  平均RPE: ${r.training.avgFatigue}\n\n`;
+    if (r.tests.length > 0) {
+      text += `【测试成绩】\n`;
+      r.tests.forEach((t: any) => { text += `  ${students.find(s => s.id === t.studentId)?.name || '未知'} - ${t.testName}: ${t.score}${t.unit} (${t.level})\n`; });
+      text += '\n';
+    }
+    if (r.injuries.length > 0) {
+      text += `【伤病观察】\n`;
+      r.injuries.forEach((i: any) => { text += `  ${students.find(s => s.id === i.studentId)?.name || '未知'} - ${i.bodyPart}: ${i.description} (${i.severity})\n`; });
+      text += '\n';
+    }
+    if (r.feedback.length > 0) {
+      text += `【家长反馈】\n`;
+      r.feedback.forEach((f: any) => { text += `  ${students.find(s => s.id === f.studentId)?.name || '未知'} [${f.category}]: ${f.content}\n`; });
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `周报_${r.weekStart}_${groupName}.txt`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const viewHistoryReport = (report: typeof weeklyReports[0]) => {
+    try { setHistoryReport(JSON.parse(report.content)); } catch { setHistoryReport(null); }
   };
 
   const getTrendData = () => {
     const student = students.find(s => s.id === trendStudent);
-    if (!student) return { attendance: [], fatigue: [], tests: [] };
+    if (!student) return { attendance: [], fatigue: [], tests: [], testNames: [] };
     const endDate = dayjs();
     const startDate = endDate.subtract(trendPeriod, 'week');
     const weeks: string[] = [];
@@ -89,7 +140,8 @@ export default function Reports() {
       try {
         const data = JSON.parse(ev.target?.result as string);
         await importAllData(data);
-        setBackupMsg('导入成功！请刷新页面。');
+        await reloadAll();
+        setBackupMsg('导入成功！数据已刷新。');
       } catch { setBackupMsg('导入失败，文件格式错误。'); }
       setTimeout(() => setBackupMsg(''), 3000);
     };
@@ -98,13 +150,13 @@ export default function Reports() {
   };
 
   const handleClear = async () => {
-    const { db } = await import('@/lib/db');
     const tables = ['groups', 'students', 'attendance', 'planTemplates', 'trainingPlans', 'exerciseItems', 'sessionRecords', 'setRecords', 'testResults', 'videoAnnotations', 'keyFrames', 'coachComments', 'injuryRecords', 'parentFeedback', 'weeklyReports'];
     for (const t of tables) {
       await (db as any)[t]?.clear?.();
     }
+    await reloadAll();
     setShowClearConfirm(false);
-    setBackupMsg('数据已清空！请刷新页面。');
+    setBackupMsg('数据已清空！列表已刷新。');
     setTimeout(() => setBackupMsg(''), 3000);
   };
 
@@ -132,9 +184,16 @@ export default function Reports() {
               <div><label className="text-xs text-[var(--text-light)]">训练组</label><select value={selectedGroup} onChange={e => setSelectedGroup(Number(e.target.value) || '')} className="select-field mt-1"><option value="">全部</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select></div>
               <button onClick={generateReport} className="btn-primary flex items-center gap-2"><Plus size={16} />生成周报</button>
             </div>
+
             {previewReport && (
               <div className="card p-4 space-y-3">
-                <h3 className="section-title flex items-center gap-2"><Calendar size={18} />周报预览 ({previewReport.weekStart} ~ {previewReport.weekEnd})</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="section-title flex items-center gap-2 mb-0"><Calendar size={18} />周报预览 ({previewReport.weekStart} ~ {previewReport.weekEnd})</h3>
+                  <div className="flex gap-2">
+                    <button onClick={saveReport} className="btn-primary text-sm flex items-center gap-1"><CheckCircle size={14} />保存周报</button>
+                    <button onClick={exportReportFile} className="btn-secondary text-sm flex items-center gap-1"><Download size={14} />导出文件</button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-[var(--bg)] rounded-lg p-3 text-center"><div className="text-2xl font-bold text-[var(--primary)]">{previewReport.attendance.present}</div><div className="text-xs text-[var(--text-light)]">出勤</div></div>
                   <div className="bg-[var(--bg)] rounded-lg p-3 text-center"><div className="text-2xl font-bold text-[var(--danger)]">{previewReport.attendance.absent}</div><div className="text-xs text-[var(--text-light)]">缺勤</div></div>
@@ -145,11 +204,50 @@ export default function Reports() {
                   <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">训练完成度</div><div className="text-xs text-[var(--text-light)] mt-1">训练次数: {previewReport.training.sessionCount} | 人均: {previewReport.training.avgSessionsPerStudent} | 平均RPE: {previewReport.training.avgFatigue}</div></div>
                   <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">伤病情况</div><div className="text-xs text-[var(--text-light)] mt-1">活跃伤病: {previewReport.injuries.length} 条</div></div>
                 </div>
-                {previewReport.tests.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">测试成绩</div>{previewReport.tests.slice(0, 5).map((t: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === t.studentId)?.name} - {t.testName}: {t.score}</div>)}</div>}
-                {previewReport.feedback.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">家长反馈</div>{previewReport.feedback.slice(0, 5).map((f: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === f.studentId)?.name}: {f.content?.slice(0, 40)}</div>)}</div>}
+                {previewReport.tests.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">测试成绩 ({previewReport.tests.length}条)</div>{previewReport.tests.slice(0, 8).map((t: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === t.studentId)?.name} - {t.testName}: {t.score}{t.unit} <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${t.level === '优秀' ? 'bg-yellow-100 text-yellow-700' : t.level === '良好' ? 'bg-blue-100 text-blue-700' : t.level === '及格' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{t.level}</span></div>)}</div>}
+                {previewReport.injuries.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">伤病观察 ({previewReport.injuries.length}条)</div>{previewReport.injuries.slice(0, 6).map((inj: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === inj.studentId)?.name} - {inj.bodyPart}: {inj.description} ({inj.severity})</div>)}</div>}
+                {previewReport.feedback.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">家长反馈 ({previewReport.feedback.length}条)</div>{previewReport.feedback.slice(0, 6).map((f: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === f.studentId)?.name} [{f.category}]: {f.content?.slice(0, 60)}</div>)}</div>}
                 <div className="text-xs text-[var(--text-light)]">生成时间: {previewReport.generatedAt}</div>
               </div>
             )}
+
+            {weeklyReports.length > 0 && (
+              <div className="card p-4">
+                <h3 className="section-title">历史周报 ({weeklyReports.length})</h3>
+                <div className="space-y-2">
+                  {weeklyReports.sort((a, b) => (b.id ?? 0) - (a.id ?? 0)).map(r => {
+                    const gName = r.groupId ? groups.find(g => g.id === r.groupId)?.name : '全部';
+                    return (
+                      <div key={r.id} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
+                        <div><span className="text-sm font-medium">{r.weekStart} ~ {r.weekEnd}</span> <span className="text-xs text-[var(--text-light)]">| {gName} | {r.generatedAt}</span></div>
+                        <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => viewHistoryReport(r)}><Eye size={12} /> 查看</button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {historyReport && (
+              <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center" onClick={() => setHistoryReport(null)}>
+                <div className="bg-white rounded-xl p-6 w-[680px] max-h-[80vh] overflow-y-auto shadow-xl" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between mb-4"><h3 className="font-bold text-lg" style={{ color: 'var(--navy)' }}>周报详情 ({historyReport.weekStart} ~ {historyReport.weekEnd})</h3><button onClick={() => setHistoryReport(null)} className="text-[var(--text-light)] hover:text-[var(--text)]">✕</button></div>
+                  <div className="grid grid-cols-4 gap-2 mb-3">
+                    <div className="bg-[var(--bg)] rounded p-2 text-center"><div className="text-lg font-bold text-[var(--primary)]">{historyReport.attendance?.present}</div><div className="text-[10px] text-[var(--text-light)]">出勤</div></div>
+                    <div className="bg-[var(--bg)] rounded p-2 text-center"><div className="text-lg font-bold text-[var(--danger)]">{historyReport.attendance?.absent}</div><div className="text-[10px] text-[var(--text-light)]">缺勤</div></div>
+                    <div className="bg-[var(--bg)] rounded p-2 text-center"><div className="text-lg font-bold text-[var(--warning)]">{historyReport.attendance?.leave}</div><div className="text-[10px] text-[var(--text-light)]">请假</div></div>
+                    <div className="bg-[var(--bg)] rounded p-2 text-center"><div className="text-lg font-bold text-[var(--success)]">{historyReport.attendance?.rate}%</div><div className="text-[10px] text-[var(--text-light)]">出勤率</div></div>
+                  </div>
+                  <div className="text-xs text-[var(--text-light)] space-y-1">
+                    <div>训练次数: {historyReport.training?.sessionCount} | 人均: {historyReport.training?.avgSessionsPerStudent} | 平均RPE: {historyReport.training?.avgFatigue}</div>
+                    <div>活跃伤病: {historyReport.injuries?.length ?? 0} 条 | 测试: {historyReport.tests?.length ?? 0} 条 | 反馈: {historyReport.feedback?.length ?? 0} 条</div>
+                    <div>生成时间: {historyReport.generatedAt}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {backupMsg && <div className="card p-3 text-center text-sm font-medium text-[var(--success)] flex items-center justify-center gap-2"><CheckCircle size={16} />{backupMsg}</div>}
           </div>
         )}
 

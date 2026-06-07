@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Student, Group, Attendance, TrainingPlan, ExerciseItem, SessionRecord, SetRecord, TestResult, InjuryRecord, ParentFeedback, PlanTemplate, VideoAnnotation, KeyFrame, CoachComment } from '@/lib/types';
+import type { Student, Group, Attendance, TrainingPlan, ExerciseItem, SessionRecord, SetRecord, TestResult, InjuryRecord, ParentFeedback, PlanTemplate, VideoAnnotation, KeyFrame, CoachComment, WeeklyReport } from '@/lib/types';
 import { db, seedDatabase } from '@/lib/db';
 
 interface AppState {
@@ -17,6 +17,7 @@ interface AppState {
   videoAnnotations: VideoAnnotation[];
   keyFrames: KeyFrame[];
   coachComments: CoachComment[];
+  weeklyReports: WeeklyReport[];
   initialized: boolean;
   initialize: () => Promise<void>;
   loadStudents: () => Promise<void>;
@@ -33,6 +34,7 @@ interface AppState {
   loadVideoAnnotations: () => Promise<void>;
   loadKeyFrames: () => Promise<void>;
   loadCoachComments: () => Promise<void>;
+  loadWeeklyReports: () => Promise<void>;
   addStudent: (student: Omit<Student, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateStudent: (id: number, data: Partial<Student>) => Promise<void>;
   deleteStudent: (id: number) => Promise<void>;
@@ -57,12 +59,15 @@ interface AppState {
   addInjuryRecord: (record: Omit<InjuryRecord, 'id'>) => Promise<void>;
   updateInjuryRecord: (id: number, data: Partial<InjuryRecord>) => Promise<void>;
   addParentFeedback: (feedback: Omit<ParentFeedback, 'id'>) => Promise<void>;
-  addPlanTemplate: (template: Omit<PlanTemplate, 'id'>) => Promise<void>;
+  addPlanTemplate: (template: Omit<PlanTemplate, 'id'>) => Promise<number>;
   addVideoAnnotation: (annotation: Omit<VideoAnnotation, 'id'>) => Promise<void>;
   deleteVideoAnnotation: (id: number) => Promise<void>;
   addKeyFrame: (frame: Omit<KeyFrame, 'id'>) => Promise<void>;
+  updateKeyFrame: (id: number, data: Partial<KeyFrame>) => Promise<void>;
   deleteKeyFrame: (id: number) => Promise<void>;
   addCoachComment: (comment: Omit<CoachComment, 'id' | 'createdAt'>) => Promise<void>;
+  addWeeklyReport: (report: Omit<WeeklyReport, 'id'>) => Promise<void>;
+  reloadAll: () => Promise<void>;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -80,6 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
   videoAnnotations: [],
   keyFrames: [],
   coachComments: [],
+  weeklyReports: [],
   initialized: false,
 
   initialize: async () => {
@@ -100,6 +106,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().loadVideoAnnotations(),
       get().loadKeyFrames(),
       get().loadCoachComments(),
+      get().loadWeeklyReports(),
     ]);
     set({ initialized: true });
   },
@@ -118,6 +125,7 @@ export const useStore = create<AppState>((set, get) => ({
   loadVideoAnnotations: async () => { const items = await db.videoAnnotations.toArray(); set({ videoAnnotations: items }); },
   loadKeyFrames: async () => { const items = await db.keyFrames.toArray(); set({ keyFrames: items }); },
   loadCoachComments: async () => { const items = await db.coachComments.toArray(); set({ coachComments: items }); },
+  loadWeeklyReports: async () => { const items = await db.weeklyReports.toArray(); set({ weeklyReports: items }); },
 
   addStudent: async (student) => {
     const now = new Date().toISOString();
@@ -221,8 +229,9 @@ export const useStore = create<AppState>((set, get) => ({
     await get().loadParentFeedback();
   },
   addPlanTemplate: async (template) => {
-    await db.planTemplates.add(template);
+    const id = await db.planTemplates.add(template);
     await get().loadPlanTemplates();
+    return id as number;
   },
   addVideoAnnotation: async (annotation) => {
     await db.videoAnnotations.add(annotation);
@@ -236,6 +245,10 @@ export const useStore = create<AppState>((set, get) => ({
     await db.keyFrames.add(frame);
     await get().loadKeyFrames();
   },
+  updateKeyFrame: async (id, data) => {
+    await db.keyFrames.update(id, data);
+    await get().loadKeyFrames();
+  },
   deleteKeyFrame: async (id) => {
     await db.keyFrames.delete(id);
     await get().loadKeyFrames();
@@ -243,5 +256,28 @@ export const useStore = create<AppState>((set, get) => ({
   addCoachComment: async (comment) => {
     await db.coachComments.add({ ...comment, createdAt: new Date().toISOString() });
     await get().loadCoachComments();
+  },
+  addWeeklyReport: async (report) => {
+    await db.weeklyReports.add(report);
+    await get().loadWeeklyReports();
+  },
+  reloadAll: async () => {
+    await Promise.all([
+      get().loadStudents(),
+      get().loadGroups(),
+      get().loadAttendance(),
+      get().loadTrainingPlans(),
+      get().loadExerciseItems(),
+      get().loadSessionRecords(),
+      get().loadSetRecords(),
+      get().loadTestResults(),
+      get().loadInjuryRecords(),
+      get().loadParentFeedback(),
+      get().loadPlanTemplates(),
+      get().loadVideoAnnotations(),
+      get().loadKeyFrames(),
+      get().loadCoachComments(),
+      get().loadWeeklyReports(),
+    ]);
   },
 }));

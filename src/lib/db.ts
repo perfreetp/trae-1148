@@ -30,7 +30,7 @@ class SmartTrainingDB extends Dexie {
       groups: '++id, name',
       attendance: '++id, studentId, date, status',
       trainingPlans: '++id, name, type, templateId, createdAt',
-      exerciseItems: '++id, planId, sortOrder',
+      exerciseItems: '++id, planId, templateId, sortOrder',
       planTemplates: '++id, name, category',
       sessionRecords: '++id, studentId, planId, date',
       setRecords: '++id, sessionId, exerciseId',
@@ -94,7 +94,7 @@ export async function seedDatabase() {
     description: '基础力量训练计划', duration: 60, createdAt: now,
   });
   for (const ex of plan1Exercises) {
-    await db.exerciseItems.add({ ...ex, planId: plan1 as number });
+    await db.exerciseItems.add({ ...ex, planId: plan1 as number, templateId: null });
   }
 
   const plan2Exercises = [
@@ -108,7 +108,47 @@ export async function seedDatabase() {
     description: '提升速度与敏捷性', duration: 45, createdAt: now,
   });
   for (const ex of plan2Exercises) {
-    await db.exerciseItems.add({ ...ex, planId: plan2 as number });
+    await db.exerciseItems.add({ ...ex, planId: plan2 as number, templateId: null });
+  }
+
+  const tpl1Exercises = [
+    { name: '深蹲', sets: 4, reps: 10, weight: 20, restSeconds: 90, sortOrder: 1 },
+    { name: '卧推', sets: 3, reps: 8, weight: 15, restSeconds: 90, sortOrder: 2 },
+    { name: '硬拉', sets: 3, reps: 8, weight: 25, restSeconds: 120, sortOrder: 3 },
+    { name: '哑铃飞鸟', sets: 3, reps: 12, weight: 8, restSeconds: 60, sortOrder: 4 },
+    { name: '平板支撑', sets: 3, reps: 30, weight: 0, restSeconds: 45, sortOrder: 5 },
+  ];
+  for (const ex of tpl1Exercises) {
+    await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[0] });
+  }
+
+  const tpl2Exercises = [
+    { name: '30米冲刺', sets: 6, reps: 1, weight: 0, restSeconds: 120, sortOrder: 1 },
+    { name: 'T字跑', sets: 4, reps: 1, weight: 0, restSeconds: 90, sortOrder: 2 },
+    { name: '绳梯训练', sets: 4, reps: 1, weight: 0, restSeconds: 60, sortOrder: 3 },
+    { name: '折返跑', sets: 3, reps: 1, weight: 0, restSeconds: 90, sortOrder: 4 },
+  ];
+  for (const ex of tpl2Exercises) {
+    await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[1] });
+  }
+
+  const tpl3Exercises = [
+    { name: '静态拉伸', sets: 3, reps: 30, weight: 0, restSeconds: 30, sortOrder: 1 },
+    { name: '动态拉伸', sets: 3, reps: 15, weight: 0, restSeconds: 30, sortOrder: 2 },
+    { name: '泡沫轴放松', sets: 2, reps: 60, weight: 0, restSeconds: 30, sortOrder: 3 },
+  ];
+  for (const ex of tpl3Exercises) {
+    await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[2] });
+  }
+
+  const tpl4Exercises = [
+    { name: '深蹲', sets: 3, reps: 10, weight: 15, restSeconds: 90, sortOrder: 1 },
+    { name: '30米冲刺', sets: 4, reps: 1, weight: 0, restSeconds: 120, sortOrder: 2 },
+    { name: '平板支撑', sets: 3, reps: 30, weight: 0, restSeconds: 45, sortOrder: 3 },
+    { name: '坐位体前屈', sets: 3, reps: 20, weight: 0, restSeconds: 30, sortOrder: 4 },
+  ];
+  for (const ex of tpl4Exercises) {
+    await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[3] });
   }
 
   const testNames = ['50米跑', '立定跳远', '引体向上', '耐力跑', '仰卧起坐', '坐位体前屈'];
