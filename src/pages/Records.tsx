@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from '@/store';
 import type { ExerciseItem } from '@/lib/types';
-import { Timer, Heart, Activity, Play, Pause, RotateCcw, Plus, Save, Minus } from 'lucide-react';
+import { Timer, Heart, Activity, Play, Pause, RotateCcw, Plus, Save, Minus, Calendar, Clock } from 'lucide-react';
 import dayjs from 'dayjs';
 
 export default function Records() {
-  const { students, trainingPlans, exerciseItems, sessionRecords, addSessionRecord, updateSessionRecord, addSetRecord } = useStore();
+  const { students, groups, trainingPlans, exerciseItems, sessionRecords, weeklySchedules, addSessionRecord, updateSessionRecord, addSetRecord } = useStore();
   const [selectedStudent, setSelectedStudent] = useState<number | ''>('');
   const [selectedPlan, setSelectedPlan] = useState<number | ''>('');
   const [recordDate, setRecordDate] = useState(dayjs().format('YYYY-MM-DD'));
@@ -27,6 +27,18 @@ export default function Records() {
 
   const plan = trainingPlans.find(p => p.id === selectedPlan);
   const planExercises: ExerciseItem[] = plan ? exerciseItems.filter(e => e.planId === plan.id) : [];
+
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const todaySchedules = weeklySchedules.filter(s => s.date === todayStr);
+
+  const handleStartFromSchedule = (groupId: number, planId: number, date: string) => {
+    const groupStudents = students.filter(s => s.groupId === groupId);
+    if (groupStudents.length === 1) {
+      setSelectedStudent(groupStudents[0].id!);
+    }
+    setSelectedPlan(planId);
+    setRecordDate(date);
+  };
 
   useEffect(() => {
     if (timerRunning) {
@@ -127,6 +139,42 @@ export default function Records() {
         <h1 className="text-2xl font-bold" style={{ color: 'var(--navy)' }}>现场记录</h1>
       </div>
       <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6 max-w-4xl">
+        {todaySchedules.length > 0 && !started && (
+          <div className="card p-4 space-y-3">
+            <h3 className="section-title flex items-center gap-2"><Calendar size={18} /> 今日排课</h3>
+            <div className="space-y-2">
+              {todaySchedules.map(schedule => {
+                const group = groups.find(g => g.id === schedule.groupId);
+                const schedPlan = trainingPlans.find(p => p.id === schedule.planId);
+                const schedExercises = exerciseItems.filter(e => e.planId === schedule.planId);
+                return (
+                  <div key={schedule.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-secondary, var(--bg))', border: '1px solid var(--border)' }}>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-sm" style={{ color: group?.color || 'var(--navy)' }}>{group?.name || '未知分组'}</span>
+                        <span className="text-sm" style={{ color: 'var(--text)' }}>{schedPlan?.name || '未知计划'}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-secondary, var(--text))' }}>
+                        {schedPlan?.duration != null && (
+                          <span className="flex items-center gap-1"><Clock size={12} /> {schedPlan.duration}分钟</span>
+                        )}
+                        <span>{schedExercises.length}个动作</span>
+                        {schedule.notes && <span className="truncate max-w-[200px]" title={schedule.notes}>{schedule.notes}</span>}
+                      </div>
+                    </div>
+                    <button
+                      className="btn-primary flex items-center gap-1 text-sm whitespace-nowrap"
+                      onClick={() => handleStartFromSchedule(schedule.groupId, schedule.planId, schedule.date)}
+                    >
+                      <Play size={14} /> 从排课开始
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="card p-4 space-y-3">
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-[140px]">

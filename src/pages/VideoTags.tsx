@@ -1,7 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useStore } from '@/store';
-import { Video, Plus, Trash2, MessageSquare, Bookmark, Play, Pause, SkipBack, X } from 'lucide-react';
+import { KEYFRAME_CATEGORIES } from '@/lib/types';
+import { Video, Plus, Trash2, MessageSquare, Bookmark, Play, Pause, SkipBack, X, Filter, Tag } from 'lucide-react';
 import dayjs from 'dayjs';
+
+const CATEGORY_COLORS: Record<string, string> = {
+  '技术动作': '#3B82F6',
+  '力量问题': '#EF4444',
+  '速度问题': '#F59E0B',
+  '柔韧问题': '#8B5CF6',
+  '疲劳信号': '#6B7280',
+  '伤病风险': '#DC2626',
+  '优秀表现': '#10B981',
+  '其他': '#9CA3AF',
+};
 
 export default function VideoTags() {
   const { students, videoAnnotations, keyFrames, coachComments, addVideoAnnotation, deleteVideoAnnotation, addKeyFrame, updateKeyFrame, deleteKeyFrame, addCoachComment } = useStore();
@@ -16,6 +28,9 @@ export default function VideoTags() {
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentTimestamp, setCommentTimestamp] = useState(0);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('');
+  const [selectedCommentStudent, setSelectedCommentStudent] = useState<number | ''>('');
+  const [newFrameCategory, setNewFrameCategory] = useState<string>('技术动作');
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -23,6 +38,17 @@ export default function VideoTags() {
   const selectedVideo = videoAnnotations.find(v => v.id === selectedVideoId) || null;
   const videoKeyFrames = keyFrames.filter(k => k.videoId === selectedVideoId).sort((a, b) => a.timestamp - b.timestamp);
   const videoComments = coachComments.filter(c => c.videoId === selectedVideoId).sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
+
+  const filteredKeyFrames = selectedCategoryFilter
+    ? videoKeyFrames.filter(kf => kf.category === selectedCategoryFilter)
+    : videoKeyFrames;
+
+  const filteredComments = selectedCommentStudent
+    ? videoComments.filter(c => {
+        const commentVideo = videoAnnotations.find(v => v.id === c.videoId);
+        return commentVideo?.studentId === selectedCommentStudent;
+      })
+    : videoComments;
 
   useEffect(() => {
     const urls: Record<number, string> = {};
@@ -80,7 +106,7 @@ export default function VideoTags() {
   const handleAddKeyFrame = async () => {
     if (!selectedVideoId) return;
     const t = videoRef.current ? videoRef.current.currentTime : currentTime;
-    await addKeyFrame({ videoId: selectedVideoId, timestamp: Math.round(t * 10) / 10, description: '', thumbnail: '' });
+    await addKeyFrame({ videoId: selectedVideoId, timestamp: Math.round(t * 10) / 10, description: '', thumbnail: '', category: newFrameCategory });
   };
 
   const handleSaveFrameDesc = async (frameId: number) => {
@@ -169,14 +195,22 @@ export default function VideoTags() {
               <div className="flex-1 relative h-2 bg-gray-200 rounded-full cursor-pointer" onClick={e => { const rect = e.currentTarget.getBoundingClientRect(); const t = ((e.clientX - rect.left) / rect.width) * duration; seekTo(t); }}>
                 <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }} />
                 {videoKeyFrames.map(kf => (
-                  <div key={kf.id} className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow cursor-pointer hover:scale-125" style={{ left: duration ? `${(kf.timestamp / duration) * 100}%` : '0%', backgroundColor: 'var(--primary-dark)' }} title={kf.description || formatTime(kf.timestamp)} onClick={e => { e.stopPropagation(); seekTo(kf.timestamp); }} />
+                  <div key={kf.id} className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow cursor-pointer hover:scale-125" style={{ left: duration ? `${(kf.timestamp / duration) * 100}%` : '0%', backgroundColor: CATEGORY_COLORS[kf.category] || 'var(--primary-dark)' }} title={`${kf.category} - ${kf.description || formatTime(kf.timestamp)}`} onClick={e => { e.stopPropagation(); seekTo(kf.timestamp); }} />
                 ))}
               </div>
               <span className="text-xs font-mono text-[var(--text-light)] w-28 text-right">{formatTime(currentTime)} / {formatTime(duration)}</span>
             </div>
-            <button className="btn-secondary flex items-center justify-center gap-2 w-full" onClick={handleAddKeyFrame}>
-              <Bookmark size={16} /> 添加关键帧 (当前: {formatTime(currentTime)})
-            </button>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-[var(--text-light)] whitespace-nowrap">分类:</label>
+                <select className="select-field text-xs flex-1" value={newFrameCategory} onChange={e => setNewFrameCategory(e.target.value)}>
+                  {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+              <button className="btn-secondary flex items-center justify-center gap-2 w-full" onClick={handleAddKeyFrame}>
+                <Bookmark size={16} /> 添加关键帧 (当前: {formatTime(currentTime)})
+              </button>
+            </div>
           </>
         ) : (
           <div className="flex-1 card flex items-center justify-center text-[var(--text-muted)]">
@@ -189,11 +223,23 @@ export default function VideoTags() {
         <h2 className="section-title">标注与点评</h2>
         <div className="flex-1 overflow-y-auto space-y-4">
           <div>
-            <h3 className="text-sm font-semibold text-[var(--navy)] mb-2">关键帧 ({videoKeyFrames.length})</h3>
-            {videoKeyFrames.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无关键帧，点击上方按钮添加</p>}
-            {videoKeyFrames.map(kf => (
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-[var(--navy)]">关键帧 ({filteredKeyFrames.length})</h3>
+              <div className="flex items-center gap-1">
+                <Filter size={12} className="text-[var(--text-muted)]" />
+                <select className="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white" value={selectedCategoryFilter} onChange={e => setSelectedCategoryFilter(e.target.value)}>
+                  <option value="">全部分类</option>
+                  {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+            </div>
+            {filteredKeyFrames.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无关键帧，点击上方按钮添加</p>}
+            {filteredKeyFrames.map(kf => (
               <div key={kf.id} className="flex items-center gap-2 py-2 border-b border-[var(--border)] last:border-0">
                 <button className="text-xs font-mono bg-[var(--navy)] text-white px-2 py-0.5 rounded hover:opacity-80" onClick={() => seekTo(kf.timestamp)}>{formatTime(kf.timestamp)}</button>
+                <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: CATEGORY_COLORS[kf.category] || '#9CA3AF' }}>
+                  <Tag size={8} />{kf.category}
+                </span>
                 {editingFrameId === kf.id ? (
                   <input className="input-field text-xs flex-1" value={frameDesc} onChange={e => setFrameDesc(e.target.value)} onBlur={() => handleSaveFrameDesc(kf.id!)} onKeyDown={e => e.key === 'Enter' && handleSaveFrameDesc(kf.id!)} autoFocus />
                 ) : (
@@ -209,15 +255,24 @@ export default function VideoTags() {
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-[var(--navy)]">教练点评 ({videoComments.length})</h3>
-              {selectedVideoId && (
-                <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => { setShowCommentInput(true); setCommentTimestamp(Math.round(currentTime)); }}>
-                  <Plus size={12} /> 添加点评
-                </button>
-              )}
+              <h3 className="text-sm font-semibold text-[var(--navy)]">教练点评 ({filteredComments.length})</h3>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <Filter size={12} className="text-[var(--text-muted)]" />
+                  <select className="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white" value={selectedCommentStudent} onChange={e => setSelectedCommentStudent(e.target.value ? Number(e.target.value) : '')}>
+                    <option value="">全部学员</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                {selectedVideoId && (
+                  <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => { setShowCommentInput(true); setCommentTimestamp(Math.round(currentTime)); }}>
+                    <Plus size={12} /> 添加点评
+                  </button>
+                )}
+              </div>
             </div>
-            {videoComments.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
-            {videoComments.map(c => (
+            {filteredComments.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
+            {filteredComments.map(c => (
               <div key={c.id} className="py-2 border-b border-[var(--border)] last:border-0">
                 <div className="flex items-center gap-2 mb-1">
                   <MessageSquare size={12} className="text-[var(--primary)]" />

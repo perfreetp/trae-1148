@@ -1,9 +1,10 @@
 import Dexie, { type Table } from 'dexie';
+import dayjs from 'dayjs';
 import type {
   Student, Group, Attendance, TrainingPlan, ExerciseItem,
   SessionRecord, SetRecord, TestResult, VideoAnnotation,
   KeyFrame, CoachComment, InjuryRecord, ParentFeedback,
-  WeeklyReport, PlanTemplate,
+  WeeklyReport, PlanTemplate, WeeklySchedule,
 } from './types';
 
 class SmartTrainingDB extends Dexie {
@@ -22,6 +23,7 @@ class SmartTrainingDB extends Dexie {
   parentFeedback!: Table<ParentFeedback, number>;
   weeklyReports!: Table<WeeklyReport, number>;
   planTemplates!: Table<PlanTemplate, number>;
+  weeklySchedules!: Table<WeeklySchedule, number>;
 
   constructor() {
     super('SmartTrainingDB');
@@ -36,11 +38,12 @@ class SmartTrainingDB extends Dexie {
       setRecords: '++id, sessionId, exerciseId',
       testResults: '++id, studentId, testName, testDate',
       videoAnnotations: '++id, studentId, recordDate',
-      keyFrames: '++id, videoId, timestamp',
+      keyFrames: '++id, videoId, timestamp, category',
       coachComments: '++id, videoId, frameId, createdAt',
       injuryRecords: '++id, studentId, bodyPart, occurredAt',
       parentFeedback: '++id, studentId, feedbackDate',
       weeklyReports: '++id, groupId, weekStart',
+      weeklySchedules: '++id, date, groupId, planId',
     });
   }
 }
@@ -76,10 +79,11 @@ export async function seedDatabase() {
   }
 
   const templates = await db.planTemplates.bulkAdd([
-    { name: '力量基础训练', category: '力量', description: '基础力量训练计划，适合初学者', duration: 60 },
-    { name: '速度灵敏训练', category: '速度', description: '提升速度与敏捷性', duration: 45 },
-    { name: '柔韧恢复训练', category: '柔韧', description: '拉伸与恢复训练', duration: 30 },
-    { name: '综合体能训练', category: '综合', description: '全面提升体能素质', duration: 75 },
+    { name: '力量基础训练', category: '力量', description: '基础力量训练计划，适合初学者', duration: 60, version: '初级', applicableLevel: '通用' },
+    { name: '力量基础训练', category: '力量', description: '中级力量训练计划，适合有一定基础的学员', duration: 60, version: '中级', applicableLevel: 'U15' },
+    { name: '速度灵敏训练', category: '速度', description: '提升速度与敏捷性', duration: 45, version: '初级', applicableLevel: '通用' },
+    { name: '柔韧恢复训练', category: '柔韧', description: '拉伸与恢复训练', duration: 30, version: '初级', applicableLevel: '通用' },
+    { name: '综合体能训练', category: '综合', description: '全面提升体能素质', duration: 75, version: '提高', applicableLevel: 'U18' },
   ], { allKeys: true }) as number[];
 
   const plan1Exercises = [
@@ -151,6 +155,17 @@ export async function seedDatabase() {
     await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[3] });
   }
 
+  const tpl5Exercises = [
+    { name: '负重深蹲', sets: 5, reps: 6, weight: 30, restSeconds: 120, sortOrder: 1 },
+    { name: '卧推', sets: 4, reps: 6, weight: 25, restSeconds: 120, sortOrder: 2 },
+    { name: '箱跳', sets: 4, reps: 5, weight: 0, restSeconds: 90, sortOrder: 3 },
+    { name: '敏捷梯进阶', sets: 4, reps: 1, weight: 0, restSeconds: 60, sortOrder: 4 },
+    { name: '泡沫轴放松', sets: 2, reps: 60, weight: 0, restSeconds: 30, sortOrder: 5 },
+  ];
+  for (const ex of tpl5Exercises) {
+    await db.exerciseItems.add({ ...ex, planId: null, templateId: templates[4] });
+  }
+
   const testNames = ['50米跑', '立定跳远', '引体向上', '耐力跑', '仰卧起坐', '坐位体前屈'];
   const units: Record<string, string> = { '50米跑': '秒', '立定跳远': '厘米', '引体向上': '次', '耐力跑': '秒', '仰卧起坐': '次/分', '坐位体前屈': '厘米' };
   const dates = ['2025-01-15', '2025-03-20', '2025-05-10'];
@@ -192,6 +207,19 @@ export async function seedDatabase() {
     studentId: students[1], content: '学业压力较大，情绪有些波动', category: '情绪',
     feedbackDate: '2025-05-19',
   });
+
+  const monday = dayjs().startOf('week').add(1, 'day').format('YYYY-MM-DD');
+  const tuesday = dayjs().startOf('week').add(2, 'day').format('YYYY-MM-DD');
+  const wednesday = dayjs().startOf('week').add(3, 'day').format('YYYY-MM-DD');
+  const thursday = dayjs().startOf('week').add(4, 'day').format('YYYY-MM-DD');
+  const friday = dayjs().startOf('week').add(5, 'day').format('YYYY-MM-DD');
+  await db.weeklySchedules.bulkAdd([
+    { date: monday, groupId: groups[0], planId: plan1 as number, notes: '注意热身' },
+    { date: tuesday, groupId: groups[1], planId: plan2 as number, notes: '' },
+    { date: wednesday, groupId: groups[0], planId: plan1 as number, notes: '柔韧放松为主' },
+    { date: thursday, groupId: groups[2], planId: plan1 as number, notes: '' },
+    { date: friday, groupId: groups[1], planId: plan2 as number, notes: '强度降低' },
+  ]);
 }
 
 export async function exportAllData() {
@@ -211,6 +239,7 @@ export async function exportAllData() {
     parentFeedback: await db.parentFeedback.toArray(),
     weeklyReports: await db.weeklyReports.toArray(),
     planTemplates: await db.planTemplates.toArray(),
+    weeklySchedules: await db.weeklySchedules.toArray(),
   };
   return data;
 }
@@ -220,7 +249,7 @@ export async function importAllData(data: Record<string, unknown[]>) {
     'groups', 'students', 'attendance', 'planTemplates', 'trainingPlans',
     'exerciseItems', 'sessionRecords', 'setRecords', 'testResults',
     'videoAnnotations', 'keyFrames', 'coachComments', 'injuryRecords',
-    'parentFeedback', 'weeklyReports',
+    'parentFeedback', 'weeklyReports', 'weeklySchedules',
   ];
   for (const tableName of tables) {
     if (data[tableName]) {

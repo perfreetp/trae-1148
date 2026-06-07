@@ -94,6 +94,7 @@ export interface KeyFrame {
   timestamp: number;
   description: string;
   thumbnail: string;
+  category: string;
 }
 
 export interface CoachComment {
@@ -139,6 +140,16 @@ export interface PlanTemplate {
   category: string;
   description: string;
   duration: number;
+  version: string;
+  applicableLevel: string;
+}
+
+export interface WeeklySchedule {
+  id?: number;
+  date: string;
+  groupId: number;
+  planId: number;
+  notes: string;
 }
 
 export type AttendanceStatus = Attendance['status'];
@@ -177,3 +188,10 @@ export const TEST_UNITS: Record<string, string> = {
 export const FEEDBACK_CATEGORIES = [
   '睡眠', '饮食', '情绪', '学业', '其他',
 ];
+
+export const KEYFRAME_CATEGORIES = [
+  '技术动作', '力量问题', '速度问题', '柔韧问题', '疲劳信号', '伤病风险', '优秀表现', '其他',
+];
+
+export const TEMPLATE_VERSIONS = ['初级', '中级', '提高'];
+export const APPLICABLE_LEVELS = ['U12', 'U15', 'U18', '通用'];

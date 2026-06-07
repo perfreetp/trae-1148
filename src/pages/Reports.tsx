@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useStore } from '@/store';
 import { exportAllData, importAllData, db } from '@/lib/db';
-import { FileText, TrendingUp, Database, Download, Upload, Plus, Calendar, AlertTriangle, Trash2, CheckCircle, Eye } from 'lucide-react';
+import { FileText, TrendingUp, Database, Download, Upload, Plus, Calendar, AlertTriangle, Trash2, CheckCircle, Eye, Video } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import dayjs from 'dayjs';
 
@@ -10,6 +10,52 @@ const tabs = [
   { key: 'trends', label: '历史趋势', icon: TrendingUp },
   { key: 'backup', label: '数据备份', icon: Database },
 ];
+
+function buildExportText(r: any, students: any[], groups: any[]) {
+  const groupName = r.groupId ? groups.find((g: any) => g.id === r.groupId)?.name : '全部';
+  let text = `智慧体育训练周报\n${'='.repeat(40)}\n`;
+  text += `时间范围: ${r.weekStart} ~ ${r.weekEnd}\n训练组: ${groupName}\n生成时间: ${r.generatedAt}\n\n`;
+  text += `【出勤统计】\n  出勤: ${r.attendance.present}  缺勤: ${r.attendance.absent}  请假: ${r.attendance.leave}  出勤率: ${r.attendance.rate}%\n\n`;
+  text += `【训练记录】\n  训练次数: ${r.training.sessionCount}  人均: ${r.training.avgSessionsPerStudent}  平均RPE: ${r.training.avgFatigue}\n\n`;
+  if (r.tests?.length > 0) {
+    text += `【测试成绩】\n`;
+    r.tests.forEach((t: any) => { text += `  ${students.find((s: any) => s.id === t.studentId)?.name || '未知'} - ${t.testName}: ${t.score}${t.unit} (${t.level})\n`; });
+  } else {
+    text += `【测试成绩】\n  暂无记录\n`;
+  }
+  text += '\n';
+  if (r.injuries?.length > 0) {
+    text += `【伤病观察】\n`;
+    r.injuries.forEach((i: any) => { text += `  ${students.find((s: any) => s.id === i.studentId)?.name || '未知'} - ${i.bodyPart}: ${i.description} (${i.severity})\n`; });
+  } else {
+    text += `【伤病观察】\n  暂无记录\n`;
+  }
+  text += '\n';
+  if (r.feedback?.length > 0) {
+    text += `【家长反馈】\n`;
+    r.feedback.forEach((f: any) => { text += `  ${students.find((s: any) => s.id === f.studentId)?.name || '未知'} [${f.category}]: ${f.content}\n`; });
+  } else {
+    text += `【家长反馈】\n  暂无记录\n`;
+  }
+  text += '\n';
+  if (r.videoComments?.length > 0) {
+    text += `【视频点评摘要】\n`;
+    r.videoComments.forEach((c: any) => {
+      const studentName = students.find((s: any) => s.id === c.studentId)?.name || '未知';
+      text += `  ${studentName} - ${c.videoFilename || '未知视频'} [${c.timestamp != null ? formatVideoTimestamp(c.timestamp) : ''}]: ${c.content}\n`;
+    });
+  } else {
+    text += `【视频点评摘要】\n  暂无记录\n`;
+  }
+  text += '\n';
+  return { text, groupName };
+}
+
+function formatVideoTimestamp(seconds: number) {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 export default function Reports() {
   const [activeTab, setActiveTab] = useState('generate');
@@ -34,6 +80,8 @@ export default function Reports() {
   const parentFeedback = useStore(s => s.parentFeedback);
   const weeklyReports = useStore(s => s.weeklyReports);
   const addWeeklyReport = useStore(s => s.addWeeklyReport);
+  const videoAnnotations = useStore(s => s.videoAnnotations);
+  const coachComments = useStore(s => s.coachComments);
   const reloadAll = useStore(s => s.reloadAll);
 
   const generateReport = () => {
@@ -50,11 +98,23 @@ export default function Reports() {
     const periodTests = testResults.filter(t => dayjs(t.testDate).isAfter(start.subtract(1, 'day')) && dayjs(t.testDate).isBefore(end.add(1, 'day')) && groupStudents.some(s => s.id === t.studentId));
     const activeInjuries = injuryRecords.filter(i => i.status !== 'recovered' && groupStudents.some(s => s.id === i.studentId));
     const periodFeedback = parentFeedback.filter(f => dayjs(f.feedbackDate).isAfter(start.subtract(1, 'day')) && dayjs(f.feedbackDate).isBefore(end.add(1, 'day')) && groupStudents.some(s => s.id === f.studentId));
+    const groupStudentIds = new Set(groupStudents.map(s => s.id));
+    const groupVideoAnnotations = videoAnnotations.filter(va => groupStudentIds.has(va.studentId) && dayjs(va.recordDate).isAfter(start.subtract(1, 'day')) && dayjs(va.recordDate).isBefore(end.add(1, 'day')));
+    const groupVideoIds = new Set(groupVideoAnnotations.map(va => va.id!));
+    const periodVideoComments = coachComments.filter(cc => groupVideoIds.has(cc.videoId)).map(cc => {
+      const va = groupVideoAnnotations.find(v => v.id === cc.videoId);
+      return {
+        ...cc,
+        studentId: va?.studentId,
+        videoFilename: va?.videoPath?.split('/').pop() || va?.videoPath || '未知视频',
+      };
+    });
     const report = {
       weekStart, weekEnd, groupId: selectedGroup || null,
       attendance: { total, present, absent, leave, rate: ((present / total) * 100).toFixed(1) },
       training: { sessionCount: periodSessions.length, avgSessionsPerStudent: groupStudents.length ? (periodSessions.length / groupStudents.length).toFixed(1) : '0', avgFatigue, details: periodSessions.slice(0, 10) },
       tests: periodTests, injuries: activeInjuries, feedback: periodFeedback,
+      videoComments: periodVideoComments,
       generatedAt: dayjs().format('YYYY-MM-DD HH:mm'),
     };
     setPreviewReport(report);
@@ -70,30 +130,20 @@ export default function Reports() {
 
   const exportReportFile = () => {
     if (!previewReport) return;
-    const r = previewReport;
-    const groupName = r.groupId ? groups.find(g => g.id === r.groupId)?.name : '全部';
-    let text = `智慧体育训练周报\n${'='.repeat(40)}\n`;
-    text += `时间范围: ${r.weekStart} ~ ${r.weekEnd}\n训练组: ${groupName}\n生成时间: ${r.generatedAt}\n\n`;
-    text += `【出勤统计】\n  出勤: ${r.attendance.present}  缺勤: ${r.attendance.absent}  请假: ${r.attendance.leave}  出勤率: ${r.attendance.rate}%\n\n`;
-    text += `【训练记录】\n  训练次数: ${r.training.sessionCount}  人均: ${r.training.avgSessionsPerStudent}  平均RPE: ${r.training.avgFatigue}\n\n`;
-    if (r.tests.length > 0) {
-      text += `【测试成绩】\n`;
-      r.tests.forEach((t: any) => { text += `  ${students.find(s => s.id === t.studentId)?.name || '未知'} - ${t.testName}: ${t.score}${t.unit} (${t.level})\n`; });
-      text += '\n';
-    }
-    if (r.injuries.length > 0) {
-      text += `【伤病观察】\n`;
-      r.injuries.forEach((i: any) => { text += `  ${students.find(s => s.id === i.studentId)?.name || '未知'} - ${i.bodyPart}: ${i.description} (${i.severity})\n`; });
-      text += '\n';
-    }
-    if (r.feedback.length > 0) {
-      text += `【家长反馈】\n`;
-      r.feedback.forEach((f: any) => { text += `  ${students.find(s => s.id === f.studentId)?.name || '未知'} [${f.category}]: ${f.content}\n`; });
-    }
+    const { text, groupName } = buildExportText(previewReport, students, groups);
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `周报_${r.weekStart}_${groupName}.txt`; a.click();
+    a.href = url; a.download = `周报_${previewReport.weekStart}_${groupName}.txt`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportHistoryReportFile = (reportData: any) => {
+    const { text, groupName } = buildExportText(reportData, students, groups);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `周报_${reportData.weekStart}_${groupName}.txt`; a.click();
     URL.revokeObjectURL(url);
   };
 
@@ -150,7 +200,7 @@ export default function Reports() {
   };
 
   const handleClear = async () => {
-    const tables = ['groups', 'students', 'attendance', 'planTemplates', 'trainingPlans', 'exerciseItems', 'sessionRecords', 'setRecords', 'testResults', 'videoAnnotations', 'keyFrames', 'coachComments', 'injuryRecords', 'parentFeedback', 'weeklyReports'];
+    const tables = ['groups', 'students', 'attendance', 'planTemplates', 'trainingPlans', 'exerciseItems', 'sessionRecords', 'setRecords', 'testResults', 'videoAnnotations', 'keyFrames', 'coachComments', 'injuryRecords', 'parentFeedback', 'weeklyReports', 'weeklySchedules'];
     for (const t of tables) {
       await (db as any)[t]?.clear?.();
     }
@@ -205,8 +255,19 @@ export default function Reports() {
                   <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">伤病情况</div><div className="text-xs text-[var(--text-light)] mt-1">活跃伤病: {previewReport.injuries.length} 条</div></div>
                 </div>
                 {previewReport.tests.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">测试成绩 ({previewReport.tests.length}条)</div>{previewReport.tests.slice(0, 8).map((t: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === t.studentId)?.name} - {t.testName}: {t.score}{t.unit} <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] ${t.level === '优秀' ? 'bg-yellow-100 text-yellow-700' : t.level === '良好' ? 'bg-blue-100 text-blue-700' : t.level === '及格' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{t.level}</span></div>)}</div>}
+                {previewReport.tests.length === 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">测试成绩</div><div className="text-xs text-[var(--text-light)] mt-1">暂无记录</div></div>}
                 {previewReport.injuries.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">伤病观察 ({previewReport.injuries.length}条)</div>{previewReport.injuries.slice(0, 6).map((inj: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === inj.studentId)?.name} - {inj.bodyPart}: {inj.description} ({inj.severity})</div>)}</div>}
+                {previewReport.injuries.length === 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">伤病观察</div><div className="text-xs text-[var(--text-light)] mt-1">暂无记录</div></div>}
                 {previewReport.feedback.length > 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)] mb-1">家长反馈 ({previewReport.feedback.length}条)</div>{previewReport.feedback.slice(0, 6).map((f: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === f.studentId)?.name} [{f.category}]: {f.content?.slice(0, 60)}</div>)}</div>}
+                {previewReport.feedback.length === 0 && <div className="bg-[var(--bg)] rounded-lg p-3"><div className="text-sm font-medium text-[var(--navy)]">家长反馈</div><div className="text-xs text-[var(--text-light)] mt-1">暂无记录</div></div>}
+                <div className="bg-[var(--bg)] rounded-lg p-3">
+                  <div className="text-sm font-medium text-[var(--navy)] flex items-center gap-1"><Video size={14} />视频点评摘要 ({previewReport.videoComments?.length ?? 0}条)</div>
+                  {previewReport.videoComments?.length > 0 ? (
+                    <div className="mt-1">{previewReport.videoComments.slice(0, 6).map((c: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === c.studentId)?.name || '未知'} - {c.videoFilename} [{formatVideoTimestamp(c.timestamp)}]: {c.content?.slice(0, 80)}</div>)}</div>
+                  ) : (
+                    <div className="text-xs text-[var(--text-light)] mt-1">暂无记录</div>
+                  )}
+                </div>
                 <div className="text-xs text-[var(--text-light)]">生成时间: {previewReport.generatedAt}</div>
               </div>
             )}
@@ -220,7 +281,10 @@ export default function Reports() {
                     return (
                       <div key={r.id} className="flex items-center justify-between py-2 border-b border-[var(--border)] last:border-0">
                         <div><span className="text-sm font-medium">{r.weekStart} ~ {r.weekEnd}</span> <span className="text-xs text-[var(--text-light)]">| {gName} | {r.generatedAt}</span></div>
-                        <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => viewHistoryReport(r)}><Eye size={12} /> 查看</button>
+                        <div className="flex gap-3">
+                          <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => viewHistoryReport(r)}><Eye size={12} /> 查看</button>
+                          <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => { const data = JSON.parse(r.content); exportHistoryReportFile(data); }}><Download size={12} /> 导出</button>
+                        </div>
                       </div>
                     );
                   })}
@@ -241,6 +305,12 @@ export default function Reports() {
                   <div className="text-xs text-[var(--text-light)] space-y-1">
                     <div>训练次数: {historyReport.training?.sessionCount} | 人均: {historyReport.training?.avgSessionsPerStudent} | 平均RPE: {historyReport.training?.avgFatigue}</div>
                     <div>活跃伤病: {historyReport.injuries?.length ?? 0} 条 | 测试: {historyReport.tests?.length ?? 0} 条 | 反馈: {historyReport.feedback?.length ?? 0} 条</div>
+                    {historyReport.videoComments?.length > 0 && (
+                      <div className="mt-2">
+                        <div className="text-sm font-medium text-[var(--navy)] flex items-center gap-1"><Video size={14} />视频点评摘要 ({historyReport.videoComments.length}条)</div>
+                        <div className="mt-1">{historyReport.videoComments.slice(0, 8).map((c: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === c.studentId)?.name || '未知'} - {c.videoFilename || '未知视频'} [{c.timestamp != null ? formatVideoTimestamp(c.timestamp) : ''}]: {c.content}</div>)}</div>
+                      </div>
+                    )}
                     <div>生成时间: {historyReport.generatedAt}</div>
                   </div>
                 </div>

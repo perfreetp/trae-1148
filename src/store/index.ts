@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Student, Group, Attendance, TrainingPlan, ExerciseItem, SessionRecord, SetRecord, TestResult, InjuryRecord, ParentFeedback, PlanTemplate, VideoAnnotation, KeyFrame, CoachComment, WeeklyReport } from '@/lib/types';
+import type { Student, Group, Attendance, TrainingPlan, ExerciseItem, SessionRecord, SetRecord, TestResult, InjuryRecord, ParentFeedback, PlanTemplate, VideoAnnotation, KeyFrame, CoachComment, WeeklyReport, WeeklySchedule } from '@/lib/types';
 import { db, seedDatabase } from '@/lib/db';
 
 interface AppState {
@@ -18,6 +18,7 @@ interface AppState {
   keyFrames: KeyFrame[];
   coachComments: CoachComment[];
   weeklyReports: WeeklyReport[];
+  weeklySchedules: WeeklySchedule[];
   initialized: boolean;
   initialize: () => Promise<void>;
   loadStudents: () => Promise<void>;
@@ -67,6 +68,10 @@ interface AppState {
   deleteKeyFrame: (id: number) => Promise<void>;
   addCoachComment: (comment: Omit<CoachComment, 'id' | 'createdAt'>) => Promise<void>;
   addWeeklyReport: (report: Omit<WeeklyReport, 'id'>) => Promise<void>;
+  loadWeeklySchedules: () => Promise<void>;
+  addWeeklySchedule: (schedule: Omit<WeeklySchedule, 'id'>) => Promise<void>;
+  deleteWeeklySchedule: (id: number) => Promise<void>;
+  updateWeeklySchedule: (id: number, data: Partial<WeeklySchedule>) => Promise<void>;
   reloadAll: () => Promise<void>;
 }
 
@@ -86,6 +91,7 @@ export const useStore = create<AppState>((set, get) => ({
   keyFrames: [],
   coachComments: [],
   weeklyReports: [],
+  weeklySchedules: [],
   initialized: false,
 
   initialize: async () => {
@@ -107,6 +113,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().loadKeyFrames(),
       get().loadCoachComments(),
       get().loadWeeklyReports(),
+      get().loadWeeklySchedules(),
     ]);
     set({ initialized: true });
   },
@@ -126,6 +133,7 @@ export const useStore = create<AppState>((set, get) => ({
   loadKeyFrames: async () => { const items = await db.keyFrames.toArray(); set({ keyFrames: items }); },
   loadCoachComments: async () => { const items = await db.coachComments.toArray(); set({ coachComments: items }); },
   loadWeeklyReports: async () => { const items = await db.weeklyReports.toArray(); set({ weeklyReports: items }); },
+  loadWeeklySchedules: async () => { const items = await db.weeklySchedules.toArray(); set({ weeklySchedules: items }); },
 
   addStudent: async (student) => {
     const now = new Date().toISOString();
@@ -261,6 +269,18 @@ export const useStore = create<AppState>((set, get) => ({
     await db.weeklyReports.add(report);
     await get().loadWeeklyReports();
   },
+  addWeeklySchedule: async (schedule) => {
+    await db.weeklySchedules.add(schedule);
+    await get().loadWeeklySchedules();
+  },
+  deleteWeeklySchedule: async (id) => {
+    await db.weeklySchedules.delete(id);
+    await get().loadWeeklySchedules();
+  },
+  updateWeeklySchedule: async (id, data) => {
+    await db.weeklySchedules.update(id, data);
+    await get().loadWeeklySchedules();
+  },
   reloadAll: async () => {
     await Promise.all([
       get().loadStudents(),
@@ -278,6 +298,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().loadKeyFrames(),
       get().loadCoachComments(),
       get().loadWeeklyReports(),
+      get().loadWeeklySchedules(),
     ]);
   },
 }));
