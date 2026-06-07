@@ -25,6 +25,7 @@ export default function VideoTags() {
   const [duration, setDuration] = useState(0);
   const [editingFrameId, setEditingFrameId] = useState<number | null>(null);
   const [frameDesc, setFrameDesc] = useState('');
+  const [editingFrameCategory, setEditingFrameCategory] = useState('');
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentTimestamp, setCommentTimestamp] = useState(0);
@@ -37,18 +38,21 @@ export default function VideoTags() {
   const filteredVideos = videoAnnotations.filter(v => !selectedStudentId || v.studentId === selectedStudentId);
   const selectedVideo = videoAnnotations.find(v => v.id === selectedVideoId) || null;
   const videoKeyFrames = keyFrames.filter(k => k.videoId === selectedVideoId).sort((a, b) => a.timestamp - b.timestamp);
-  const videoComments = coachComments.filter(c => c.videoId === selectedVideoId).sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
 
   const filteredKeyFrames = selectedCategoryFilter
-    ? videoKeyFrames.filter(kf => kf.category === selectedCategoryFilter)
+    ? videoKeyFrames.filter(kf => (kf.category || '其他') === selectedCategoryFilter)
     : videoKeyFrames;
 
-  const filteredComments = selectedCommentStudent
-    ? videoComments.filter(c => {
+  const allCommentsForStudent = selectedCommentStudent
+    ? coachComments.filter(c => {
         const commentVideo = videoAnnotations.find(v => v.id === c.videoId);
         return commentVideo?.studentId === selectedCommentStudent;
       })
-    : videoComments;
+    : (selectedVideoId
+      ? coachComments.filter(c => c.videoId === selectedVideoId)
+      : []);
+
+  const displayComments = allCommentsForStudent.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
 
   useEffect(() => {
     const urls: Record<number, string> = {};
@@ -111,8 +115,8 @@ export default function VideoTags() {
 
   const handleSaveFrameDesc = async (frameId: number) => {
     setEditingFrameId(null);
-    if (frameDesc.trim() && frameId) {
-      await updateKeyFrame(frameId, { description: frameDesc });
+    if (frameId) {
+      await updateKeyFrame(frameId, { description: frameDesc, category: editingFrameCategory || '其他' });
     }
   };
 
@@ -131,6 +135,8 @@ export default function VideoTags() {
   };
 
   const getStudentName = (studentId: number) => students.find(s => s.id === studentId)?.name || '未知';
+
+  const getDisplayCategory = (kf: typeof keyFrames[0]) => kf.category || '其他';
 
   return (
     <div className="flex gap-4 h-full p-4">
@@ -195,7 +201,7 @@ export default function VideoTags() {
               <div className="flex-1 relative h-2 bg-gray-200 rounded-full cursor-pointer" onClick={e => { const rect = e.currentTarget.getBoundingClientRect(); const t = ((e.clientX - rect.left) / rect.width) * duration; seekTo(t); }}>
                 <div className="h-full bg-[var(--primary)] rounded-full transition-all" style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }} />
                 {videoKeyFrames.map(kf => (
-                  <div key={kf.id} className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow cursor-pointer hover:scale-125" style={{ left: duration ? `${(kf.timestamp / duration) * 100}%` : '0%', backgroundColor: CATEGORY_COLORS[kf.category] || 'var(--primary-dark)' }} title={`${kf.category} - ${kf.description || formatTime(kf.timestamp)}`} onClick={e => { e.stopPropagation(); seekTo(kf.timestamp); }} />
+                  <div key={kf.id} className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow cursor-pointer hover:scale-125" style={{ left: duration ? `${(kf.timestamp / duration) * 100}%` : '0%', backgroundColor: CATEGORY_COLORS[getDisplayCategory(kf)] || 'var(--primary-dark)' }} title={`${getDisplayCategory(kf)} - ${kf.description || formatTime(kf.timestamp)}`} onClick={e => { e.stopPropagation(); seekTo(kf.timestamp); }} />
                 ))}
               </div>
               <span className="text-xs font-mono text-[var(--text-light)] w-28 text-right">{formatTime(currentTime)} / {formatTime(duration)}</span>
@@ -235,27 +241,35 @@ export default function VideoTags() {
             </div>
             {filteredKeyFrames.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无关键帧，点击上方按钮添加</p>}
             {filteredKeyFrames.map(kf => (
-              <div key={kf.id} className="flex items-center gap-2 py-2 border-b border-[var(--border)] last:border-0">
-                <button className="text-xs font-mono bg-[var(--navy)] text-white px-2 py-0.5 rounded hover:opacity-80" onClick={() => seekTo(kf.timestamp)}>{formatTime(kf.timestamp)}</button>
-                <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap" style={{ backgroundColor: CATEGORY_COLORS[kf.category] || '#9CA3AF' }}>
-                  <Tag size={8} />{kf.category}
-                </span>
-                {editingFrameId === kf.id ? (
-                  <input className="input-field text-xs flex-1" value={frameDesc} onChange={e => setFrameDesc(e.target.value)} onBlur={() => handleSaveFrameDesc(kf.id!)} onKeyDown={e => e.key === 'Enter' && handleSaveFrameDesc(kf.id!)} autoFocus />
-                ) : (
-                  <span className="text-sm flex-1 cursor-pointer hover:text-[var(--primary)] truncate" onClick={() => { setEditingFrameId(kf.id!); setFrameDesc(kf.description); }}>
-                    {kf.description || '点击添加描述...'}
-                  </span>
-                )}
-                <button className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)]" onClick={() => deleteKeyFrame(kf.id!)}>
-                  <Trash2 size={12} />
-                </button>
+              <div key={kf.id} className="py-2 border-b border-[var(--border)] last:border-0">
+                <div className="flex items-center gap-2">
+                  <button className="text-xs font-mono bg-[var(--navy)] text-white px-2 py-0.5 rounded hover:opacity-80 flex-shrink-0" onClick={() => seekTo(kf.timestamp)}>{formatTime(kf.timestamp)}</button>
+                  {editingFrameId === kf.id ? (
+                    <select className="text-xs border border-[var(--border)] rounded px-1 py-0.5 flex-shrink-0" value={editingFrameCategory} onChange={e => setEditingFrameCategory(e.target.value)}>
+                      {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  ) : (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap flex-shrink-0 cursor-pointer" style={{ backgroundColor: CATEGORY_COLORS[getDisplayCategory(kf)] || '#9CA3AF' }} onClick={() => { setEditingFrameId(kf.id!); setFrameDesc(kf.description); setEditingFrameCategory(getDisplayCategory(kf)); }}>
+                      <Tag size={8} />{getDisplayCategory(kf)}
+                    </span>
+                  )}
+                  {editingFrameId === kf.id ? (
+                    <input className="input-field text-xs flex-1 min-w-0" value={frameDesc} onChange={e => setFrameDesc(e.target.value)} onBlur={() => handleSaveFrameDesc(kf.id!)} onKeyDown={e => e.key === 'Enter' && handleSaveFrameDesc(kf.id!)} autoFocus />
+                  ) : (
+                    <span className="text-sm flex-1 cursor-pointer hover:text-[var(--primary)] truncate" onClick={() => { setEditingFrameId(kf.id!); setFrameDesc(kf.description); setEditingFrameCategory(getDisplayCategory(kf)); }}>
+                      {kf.description || '点击添加描述...'}
+                    </span>
+                  )}
+                  <button className="p-1 text-[var(--text-muted)] hover:text-[var(--danger)] flex-shrink-0" onClick={() => deleteKeyFrame(kf.id!)}>
+                    <Trash2 size={12} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-[var(--navy)]">教练点评 ({filteredComments.length})</h3>
+              <h3 className="text-sm font-semibold text-[var(--navy)]">教练点评 ({displayComments.length})</h3>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <Filter size={12} className="text-[var(--text-muted)]" />
@@ -271,17 +285,32 @@ export default function VideoTags() {
                 )}
               </div>
             </div>
-            {filteredComments.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
-            {filteredComments.map(c => (
-              <div key={c.id} className="py-2 border-b border-[var(--border)] last:border-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <MessageSquare size={12} className="text-[var(--primary)]" />
-                  <button className="text-xs font-mono text-[var(--text-light)] hover:text-[var(--primary)]" onClick={() => seekTo(c.timestamp)}>{formatTime(c.timestamp)}</button>
-                  <span className="text-xs text-[var(--text-muted)]">{dayjs(c.createdAt).format('MM-DD HH:mm')}</span>
+            <div className="text-[10px] text-[var(--text-muted)] mb-1">
+              {selectedCommentStudent
+                ? `显示 ${getStudentName(selectedCommentStudent)} 所有视频的点评`
+                : selectedVideoId
+                  ? `显示当前视频的点评`
+                  : '请选择视频或学员查看点评'}
+            </div>
+            {displayComments.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
+            {displayComments.map(c => {
+              const commentVideo = videoAnnotations.find(v => v.id === c.videoId);
+              const commentStudentId = commentVideo?.studentId;
+              return (
+                <div key={c.id} className="py-2 border-b border-[var(--border)] last:border-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MessageSquare size={12} className="text-[var(--primary)] flex-shrink-0" />
+                    {commentStudentId && <span className="text-xs font-medium text-[var(--navy)]">{getStudentName(commentStudentId)}</span>}
+                    {commentVideo && selectedVideoId !== c.videoId && (
+                      <span className="text-[10px] text-[var(--text-muted)] truncate">{commentVideo.videoPath}</span>
+                    )}
+                    <button className="text-xs font-mono text-[var(--text-light)] hover:text-[var(--primary)]" onClick={() => { if (commentVideo) { setSelectedVideoId(commentVideo.id ?? null); seekTo(c.timestamp); } }}>{formatTime(c.timestamp)}</button>
+                    <span className="text-xs text-[var(--text-muted)]">{dayjs(c.createdAt).format('MM-DD HH:mm')}</span>
+                  </div>
+                  <p className="text-sm pl-5">{c.content}</p>
                 </div>
-                <p className="text-sm pl-5">{c.content}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
         {showCommentInput && (

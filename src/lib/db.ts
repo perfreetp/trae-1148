@@ -38,12 +38,41 @@ class SmartTrainingDB extends Dexie {
       setRecords: '++id, sessionId, exerciseId',
       testResults: '++id, studentId, testName, testDate',
       videoAnnotations: '++id, studentId, recordDate',
+      keyFrames: '++id, videoId, timestamp',
+      coachComments: '++id, videoId, frameId, createdAt',
+      injuryRecords: '++id, studentId, bodyPart, occurredAt',
+      parentFeedback: '++id, studentId, feedbackDate',
+      weeklyReports: '++id, groupId, weekStart',
+    });
+
+    this.version(2).stores({
+      students: '++id, name, groupId, createdAt',
+      groups: '++id, name',
+      attendance: '++id, studentId, date, status',
+      trainingPlans: '++id, name, type, templateId, createdAt',
+      exerciseItems: '++id, planId, templateId, sortOrder',
+      planTemplates: '++id, name, category',
+      sessionRecords: '++id, studentId, planId, date',
+      setRecords: '++id, sessionId, exerciseId',
+      testResults: '++id, studentId, testName, testDate',
+      videoAnnotations: '++id, studentId, recordDate',
       keyFrames: '++id, videoId, timestamp, category',
       coachComments: '++id, videoId, frameId, createdAt',
       injuryRecords: '++id, studentId, bodyPart, occurredAt',
       parentFeedback: '++id, studentId, feedbackDate',
       weeklyReports: '++id, groupId, weekStart',
       weeklySchedules: '++id, date, groupId, planId',
+    }).upgrade(tx => {
+      const templates = tx.table('planTemplates');
+      return templates.toCollection().modify(tpl => {
+        if (!tpl.version) tpl.version = '初级';
+        if (!tpl.applicableLevel) tpl.applicableLevel = '通用';
+      }).then(() => {
+        const keyFrames = tx.table('keyFrames');
+        return keyFrames.toCollection().modify(kf => {
+          if (!kf.category) kf.category = '其他';
+        });
+      });
     });
   }
 }

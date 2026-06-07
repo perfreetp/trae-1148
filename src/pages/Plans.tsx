@@ -70,8 +70,32 @@ export default function Plans() {
     setDraftExercises([]);
   };
 
+  const FALLBACK_EXERCISES: Record<string, DraftExercise[]> = {
+    '力量': [
+      { name: '深蹲', sets: 3, reps: 10, weight: 15, restSeconds: 90 },
+      { name: '卧推', sets: 3, reps: 8, weight: 10, restSeconds: 90 },
+      { name: '硬拉', sets: 3, reps: 8, weight: 15, restSeconds: 120 },
+      { name: '平板支撑', sets: 3, reps: 30, weight: 0, restSeconds: 45 },
+    ],
+    '速度': [
+      { name: '30米冲刺', sets: 4, reps: 1, weight: 0, restSeconds: 120 },
+      { name: 'T字跑', sets: 3, reps: 1, weight: 0, restSeconds: 90 },
+      { name: '绳梯训练', sets: 3, reps: 1, weight: 0, restSeconds: 60 },
+    ],
+    '柔韧': [
+      { name: '静态拉伸', sets: 3, reps: 30, weight: 0, restSeconds: 30 },
+      { name: '动态拉伸', sets: 3, reps: 15, weight: 0, restSeconds: 30 },
+      { name: '泡沫轴放松', sets: 2, reps: 60, weight: 0, restSeconds: 30 },
+    ],
+    '综合': [
+      { name: '深蹲', sets: 3, reps: 10, weight: 15, restSeconds: 90 },
+      { name: '30米冲刺', sets: 3, reps: 1, weight: 0, restSeconds: 120 },
+      { name: '平板支撑', sets: 3, reps: 30, weight: 0, restSeconds: 45 },
+      { name: '坐位体前屈', sets: 3, reps: 20, weight: 0, restSeconds: 30 },
+    ],
+  };
+
   const handleUseTemplate = async (tpl: PlanTemplate) => {
-    const planId = await addTrainingPlan({ name: `${tpl.name}(${tpl.version})`, type: tpl.category, templateId: tpl.id ?? null, description: tpl.description, duration: tpl.duration });
     let tplExercises = getTemplateExercises(tpl.id!);
     if (tplExercises.length === 0) {
       const sameNameTpls = planTemplates.filter(t => t.name === tpl.name && t.id !== tpl.id);
@@ -80,6 +104,15 @@ export default function Plans() {
         if (altEx.length > 0) { tplExercises = altEx; break; }
       }
     }
+    if (tplExercises.length === 0) {
+      const fallback = FALLBACK_EXERCISES[tpl.category] || FALLBACK_EXERCISES['力量'];
+      tplExercises = fallback.map((ex, i) => ({ ...ex, id: undefined, planId: null, templateId: tpl.id!, sortOrder: i + 1, name: ex.name, sets: ex.sets, reps: ex.reps, weight: ex.weight, restSeconds: ex.restSeconds }));
+    }
+    if (tplExercises.length === 0) {
+      alert(`模板「${tpl.name}」暂无动作内容，请先在模板详情中添加动作后再使用。`);
+      return;
+    }
+    const planId = await addTrainingPlan({ name: `${tpl.name}(${tpl.version || '初级'})`, type: tpl.category, templateId: tpl.id ?? null, description: tpl.description, duration: tpl.duration });
     for (const ex of tplExercises) {
       await addExerciseItem({ planId: planId as number, templateId: null, name: ex.name, sets: ex.sets, reps: ex.reps, weight: ex.weight, restSeconds: ex.restSeconds, sortOrder: ex.sortOrder });
     }
