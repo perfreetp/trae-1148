@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useStore } from '@/store';
 import { KEYFRAME_CATEGORIES } from '@/lib/types';
-import { Video, Plus, Trash2, MessageSquare, Bookmark, Play, Pause, SkipBack, X, Filter, Tag } from 'lucide-react';
+import { Video, Plus, Trash2, MessageSquare, Bookmark, Play, Pause, SkipBack, X, Filter, Tag, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
 import dayjs from 'dayjs';
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -32,6 +32,7 @@ export default function VideoTags() {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('');
   const [selectedCommentStudent, setSelectedCommentStudent] = useState<number | ''>('');
   const [newFrameCategory, setNewFrameCategory] = useState<string>('技术动作');
+  const [expandedVideoGroups, setExpandedVideoGroups] = useState<Set<number>>(new Set());
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -39,20 +40,55 @@ export default function VideoTags() {
   const selectedVideo = videoAnnotations.find(v => v.id === selectedVideoId) || null;
   const videoKeyFrames = keyFrames.filter(k => k.videoId === selectedVideoId).sort((a, b) => a.timestamp - b.timestamp);
 
+  const getDisplayCategory = (kf: typeof keyFrames[0]) => kf.category || '其他';
+
   const filteredKeyFrames = selectedCategoryFilter
-    ? videoKeyFrames.filter(kf => (kf.category || '其他') === selectedCategoryFilter)
+    ? videoKeyFrames.filter(kf => getDisplayCategory(kf) === selectedCategoryFilter)
     : videoKeyFrames;
 
-  const allCommentsForStudent = selectedCommentStudent
-    ? coachComments.filter(c => {
-        const commentVideo = videoAnnotations.find(v => v.id === c.videoId);
-        return commentVideo?.studentId === selectedCommentStudent;
-      })
-    : (selectedVideoId
-      ? coachComments.filter(c => c.videoId === selectedVideoId)
-      : []);
+  const categoryStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    videoKeyFrames.forEach(kf => {
+      const cat = getDisplayCategory(kf);
+      stats[cat] = (stats[cat] || 0) + 1;
+    });
+    return stats;
+  }, [videoKeyFrames]);
 
-  const displayComments = allCommentsForStudent.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
+  const groupedComments = useMemo(() => {
+    let comments: typeof coachComments = [];
+    if (selectedCommentStudent) {
+      comments = coachComments.filter(c => {
+        const cv = videoAnnotations.find(v => v.id === c.videoId);
+        return cv?.studentId === selectedCommentStudent;
+      });
+    } else if (selectedVideoId) {
+      comments = coachComments.filter(c => c.videoId === selectedVideoId);
+    }
+    comments.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
+
+    const groups: { videoId: number; videoPath: string; recordDate: string; studentId: number; comments: typeof comments }[] = [];
+    const videoMap = new Map<number, typeof comments>();
+    comments.forEach(c => {
+      if (!videoMap.has(c.videoId)) videoMap.set(c.videoId, []);
+      videoMap.get(c.videoId)!.push(c);
+    });
+    videoMap.forEach((vidComments, videoId) => {
+      const va = videoAnnotations.find(v => v.id === videoId);
+      if (va) {
+        groups.push({ videoId, videoPath: va.videoPath, recordDate: va.recordDate, studentId: va.studentId, comments: vidComments });
+      }
+    });
+    return groups;
+  }, [selectedCommentStudent, selectedVideoId, coachComments, videoAnnotations]);
+
+  const toggleVideoGroup = (videoId: number) => {
+    setExpandedVideoGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(videoId)) next.delete(videoId); else next.add(videoId);
+      return next;
+    });
+  };
 
   useEffect(() => {
     const urls: Record<number, string> = {};
@@ -98,6 +134,11 @@ export default function VideoTags() {
     }
   };
 
+  const jumpToVideoAndTime = (videoId: number, time: number) => {
+    setSelectedVideoId(videoId);
+    setTimeout(() => seekTo(time), 100);
+  };
+
   const handleImportVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -136,11 +177,11 @@ export default function VideoTags() {
 
   const getStudentName = (studentId: number) => students.find(s => s.id === studentId)?.name || '未知';
 
-  const getDisplayCategory = (kf: typeof keyFrames[0]) => kf.category || '其他';
+  const totalCommentsCount = groupedComments.reduce((sum, g) => sum + g.comments.length, 0);
 
   return (
     <div className="flex gap-4 h-full p-4">
-      <div className="w-1/3 flex flex-col gap-3">
+      <div className="w-1/4 flex flex-col gap-3">
         <h2 className="section-title">视频列表</h2>
         <select className="select-field" value={selectedStudentId} onChange={e => setSelectedStudentId(e.target.value ? Number(e.target.value) : '')}>
           <option value="">全部学员</option>
@@ -149,8 +190,8 @@ export default function VideoTags() {
         <div className="flex-1 overflow-y-auto space-y-2">
           {filteredVideos.map(v => (
             <div key={v.id} className={`card flex items-center gap-3 cursor-pointer hover:ring-2 hover:ring-[var(--primary)] transition-all py-3 ${selectedVideoId === v.id ? 'ring-2 ring-[var(--primary)]' : ''}`} onClick={() => setSelectedVideoId(v.id ?? null)}>
-              <div className="w-16 h-12 bg-gray-200 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
-                {v.videoBlob ? <Video size={20} className="text-[var(--primary)]" /> : <Video size={20} className="text-gray-400" />}
+              <div className="w-14 h-10 bg-gray-200 rounded flex items-center justify-center flex-shrink-0 overflow-hidden">
+                {v.videoBlob ? <Video size={16} className="text-[var(--primary)]" /> : <Video size={16} className="text-gray-400" />}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{getStudentName(v.studentId)}</p>
@@ -225,7 +266,7 @@ export default function VideoTags() {
         )}
       </div>
 
-      <div className="w-1/3 flex flex-col gap-3 overflow-hidden">
+      <div className="w-[38%] flex flex-col gap-3 overflow-hidden">
         <h2 className="section-title">标注与点评</h2>
         <div className="flex-1 overflow-y-auto space-y-4">
           <div>
@@ -235,10 +276,22 @@ export default function VideoTags() {
                 <Filter size={12} className="text-[var(--text-muted)]" />
                 <select className="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white" value={selectedCategoryFilter} onChange={e => setSelectedCategoryFilter(e.target.value)}>
                   <option value="">全部分类</option>
-                  {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}{categoryStats[cat] ? ` (${categoryStats[cat]})` : ''}</option>)}
                 </select>
               </div>
             </div>
+            {Object.keys(categoryStats).length > 0 && !selectedCategoryFilter && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {Object.entries(categoryStats).map(([cat, count]) => (
+                  <button key={cat} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full text-white hover:opacity-80 transition-opacity" style={{ backgroundColor: CATEGORY_COLORS[cat] || '#9CA3AF' }} onClick={() => setSelectedCategoryFilter(cat)}>
+                    <Tag size={8} />{cat} {count}
+                  </button>
+                ))}
+              </div>
+            )}
+            {selectedCategoryFilter && (
+              <button className="text-[10px] text-[var(--primary)] hover:underline mb-1" onClick={() => setSelectedCategoryFilter('')}>← 返回全部 ({videoKeyFrames.length})</button>
+            )}
             {filteredKeyFrames.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无关键帧，点击上方按钮添加</p>}
             {filteredKeyFrames.map(kf => (
               <div key={kf.id} className="py-2 border-b border-[var(--border)] last:border-0">
@@ -249,7 +302,7 @@ export default function VideoTags() {
                       {KEYFRAME_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                     </select>
                   ) : (
-                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap flex-shrink-0 cursor-pointer" style={{ backgroundColor: CATEGORY_COLORS[getDisplayCategory(kf)] || '#9CA3AF' }} onClick={() => { setEditingFrameId(kf.id!); setFrameDesc(kf.description); setEditingFrameCategory(getDisplayCategory(kf)); }}>
+                    <span className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full text-white whitespace-nowrap flex-shrink-0 cursor-pointer hover:opacity-80" style={{ backgroundColor: CATEGORY_COLORS[getDisplayCategory(kf)] || '#9CA3AF' }} onClick={() => { setEditingFrameId(kf.id!); setFrameDesc(kf.description); setEditingFrameCategory(getDisplayCategory(kf)); }}>
                       <Tag size={8} />{getDisplayCategory(kf)}
                     </span>
                   )}
@@ -267,47 +320,60 @@ export default function VideoTags() {
               </div>
             ))}
           </div>
+
           <div>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-semibold text-[var(--navy)]">教练点评 ({displayComments.length})</h3>
+              <h3 className="text-sm font-semibold text-[var(--navy)] flex items-center gap-1"><MessageSquare size={14} />教练点评 ({totalCommentsCount})</h3>
               <div className="flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <Filter size={12} className="text-[var(--text-muted)]" />
                   <select className="text-xs border border-[var(--border)] rounded px-1 py-0.5 bg-white" value={selectedCommentStudent} onChange={e => setSelectedCommentStudent(e.target.value ? Number(e.target.value) : '')}>
-                    <option value="">全部学员</option>
-                    {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    <option value="">当前视频</option>
+                    {students.map(s => <option key={s.id} value={s.id}>{s.name} (全部视频)</option>)}
                   </select>
                 </div>
                 {selectedVideoId && (
                   <button className="text-xs text-[var(--primary)] hover:underline flex items-center gap-1" onClick={() => { setShowCommentInput(true); setCommentTimestamp(Math.round(currentTime)); }}>
-                    <Plus size={12} /> 添加点评
+                    <Plus size={12} /> 添加
                   </button>
                 )}
               </div>
             </div>
             <div className="text-[10px] text-[var(--text-muted)] mb-1">
               {selectedCommentStudent
-                ? `显示 ${getStudentName(selectedCommentStudent)} 所有视频的点评`
+                ? `汇总 ${getStudentName(selectedCommentStudent)} 所有视频的点评，按视频分组`
                 : selectedVideoId
                   ? `显示当前视频的点评`
                   : '请选择视频或学员查看点评'}
             </div>
-            {displayComments.length === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
-            {displayComments.map(c => {
-              const commentVideo = videoAnnotations.find(v => v.id === c.videoId);
-              const commentStudentId = commentVideo?.studentId;
+            {totalCommentsCount === 0 && <p className="text-xs text-[var(--text-muted)] py-2">暂无点评</p>}
+            {groupedComments.map(group => {
+              const isExpanded = expandedVideoGroups.has(group.videoId) || selectedVideoId === group.videoId;
               return (
-                <div key={c.id} className="py-2 border-b border-[var(--border)] last:border-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <MessageSquare size={12} className="text-[var(--primary)] flex-shrink-0" />
-                    {commentStudentId && <span className="text-xs font-medium text-[var(--navy)]">{getStudentName(commentStudentId)}</span>}
-                    {commentVideo && selectedVideoId !== c.videoId && (
-                      <span className="text-[10px] text-[var(--text-muted)] truncate">{commentVideo.videoPath}</span>
+                <div key={group.videoId} className="mb-2 border border-[var(--border)] rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-gray-50 cursor-pointer hover:bg-gray-100" onClick={() => { if (selectedVideoId !== group.videoId) toggleVideoGroup(group.videoId); }}>
+                    {selectedVideoId !== group.videoId && (isExpanded ? <ChevronDown size={12} className="text-[var(--text-muted)] flex-shrink-0" /> : <ChevronRight size={12} className="text-[var(--text-muted)] flex-shrink-0" />)}
+                    <Video size={12} className="text-[var(--primary)] flex-shrink-0" />
+                    <span className="text-xs font-medium text-[var(--navy)] truncate flex-1">{group.videoPath}</span>
+                    <span className="text-[10px] text-[var(--text-muted)] flex-shrink-0">{group.recordDate}</span>
+                    <span className="text-[10px] bg-[var(--primary)] text-white px-1.5 py-0.5 rounded-full flex-shrink-0">{group.comments.length}</span>
+                    {selectedVideoId !== group.videoId && (
+                      <button className="text-[10px] text-[var(--primary)] hover:underline flex-shrink-0" onClick={e => { e.stopPropagation(); setSelectedVideoId(group.videoId); }}>打开</button>
                     )}
-                    <button className="text-xs font-mono text-[var(--text-light)] hover:text-[var(--primary)]" onClick={() => { if (commentVideo) { setSelectedVideoId(commentVideo.id ?? null); seekTo(c.timestamp); } }}>{formatTime(c.timestamp)}</button>
-                    <span className="text-xs text-[var(--text-muted)]">{dayjs(c.createdAt).format('MM-DD HH:mm')}</span>
                   </div>
-                  <p className="text-sm pl-5">{c.content}</p>
+                  {isExpanded && (
+                    <div className="px-3 py-1">
+                      {group.comments.map(c => (
+                        <div key={c.id} className="py-2 border-b border-[var(--border)] last:border-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <button className="text-xs font-mono text-[var(--text-light)] hover:text-[var(--primary)] bg-gray-100 px-1.5 py-0.5 rounded" onClick={() => jumpToVideoAndTime(group.videoId, c.timestamp)}>{formatTime(c.timestamp)}</button>
+                            <span className="text-[10px] text-[var(--text-muted)]">{dayjs(c.createdAt).format('MM-DD HH:mm')}</span>
+                          </div>
+                          <p className="text-sm pl-1">{c.content}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}

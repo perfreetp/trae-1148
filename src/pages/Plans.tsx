@@ -97,6 +97,7 @@ export default function Plans() {
 
   const handleUseTemplate = async (tpl: PlanTemplate) => {
     let tplExercises = getTemplateExercises(tpl.id!);
+    let usedFallback = false;
     if (tplExercises.length === 0) {
       const sameNameTpls = planTemplates.filter(t => t.name === tpl.name && t.id !== tpl.id);
       for (const alt of sameNameTpls) {
@@ -107,12 +108,13 @@ export default function Plans() {
     if (tplExercises.length === 0) {
       const fallback = FALLBACK_EXERCISES[tpl.category] || FALLBACK_EXERCISES['力量'];
       tplExercises = fallback.map((ex, i) => ({ ...ex, id: undefined, planId: null, templateId: tpl.id!, sortOrder: i + 1, name: ex.name, sets: ex.sets, reps: ex.reps, weight: ex.weight, restSeconds: ex.restSeconds }));
+      usedFallback = true;
     }
     if (tplExercises.length === 0) {
       alert(`模板「${tpl.name}」暂无动作内容，请先在模板详情中添加动作后再使用。`);
       return;
     }
-    const planId = await addTrainingPlan({ name: `${tpl.name}(${tpl.version || '初级'})`, type: tpl.category, templateId: tpl.id ?? null, description: tpl.description, duration: tpl.duration });
+    const planId = await addTrainingPlan({ name: `${tpl.name}(${tpl.version || '初级'})`, type: tpl.category, templateId: tpl.id ?? null, description: usedFallback ? `${tpl.description}（动作为系统推荐）` : tpl.description, duration: tpl.duration });
     for (const ex of tplExercises) {
       await addExerciseItem({ planId: planId as number, templateId: null, name: ex.name, sets: ex.sets, reps: ex.reps, weight: ex.weight, restSeconds: ex.restSeconds, sortOrder: ex.sortOrder });
     }
@@ -380,12 +382,14 @@ export default function Plans() {
             <div className="space-y-3">
               {trainingPlans.map((plan) => {
                 const planEx = getPlanExercises(plan.id!);
+                const sourceTemplate = plan.templateId ? planTemplates.find(t => t.id === plan.templateId) : null;
                 return (
                   <div key={plan.id} className="card">
                     <div className="flex items-center justify-between cursor-pointer" onClick={() => setExpandedPlan(expandedPlan === plan.id ? null : plan.id)}>
                       <div className="flex items-center gap-3">
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CATEGORY_COLORS[plan.type] || 'bg-gray-100 text-gray-700'}`}>{plan.type}</span>
                         <span className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{plan.name}</span>
+                        {sourceTemplate && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600">来自模板: {sourceTemplate.name}</span>}
                       </div>
                       <div className="flex items-center gap-3">
                         <span className="text-xs flex items-center gap-1" style={{ color: 'var(--text-light)' }}><Clock size={12} />{plan.duration}分钟</span>
@@ -395,6 +399,14 @@ export default function Plans() {
                     </div>
                     {expandedPlan === plan.id && (
                       <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                        {sourceTemplate && (
+                          <div className="text-[10px] text-[var(--text-light)] mb-2 flex items-center gap-1">
+                            <Copy size={10} />动作已从模板复制，编辑不影响原模板
+                          </div>
+                        )}
+                        {plan.description?.includes('系统推荐') && (
+                          <div className="text-[10px] text-amber-600 mb-2">⚠ 动作为系统自动推荐，请根据实际情况调整</div>
+                        )}
                         <table className="w-full text-sm">
                           <thead><tr className="text-left" style={{ color: 'var(--text-light)' }}>
                             <th className="pb-2 font-medium">动作</th><th className="pb-2 font-medium">组数</th><th className="pb-2 font-medium">次数</th><th className="pb-2 font-medium">重量(kg)</th><th className="pb-2 font-medium">休息(s)</th><th className="pb-2 font-medium"></th>

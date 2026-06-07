@@ -40,9 +40,26 @@ function buildExportText(r: any, students: any[], groups: any[]) {
   text += '\n';
   if (r.videoComments?.length > 0) {
     text += `【视频点评摘要】\n`;
+    const commentsByStudent = new Map<string, any[]>();
     r.videoComments.forEach((c: any) => {
       const studentName = students.find((s: any) => s.id === c.studentId)?.name || '未知';
-      text += `  ${studentName} - ${c.videoFilename || '未知视频'} [${c.timestamp != null ? formatVideoTimestamp(c.timestamp) : ''}]: ${c.content}\n`;
+      if (!commentsByStudent.has(studentName)) commentsByStudent.set(studentName, []);
+      commentsByStudent.get(studentName)!.push(c);
+    });
+    commentsByStudent.forEach((comments, studentName) => {
+      text += `  ▶ ${studentName}\n`;
+      const commentsByVideo = new Map<string, any[]>();
+      comments.forEach(c => {
+        const videoName = c.videoFilename || '未知视频';
+        if (!commentsByVideo.has(videoName)) commentsByVideo.set(videoName, []);
+        commentsByVideo.get(videoName)!.push(c);
+      });
+      commentsByVideo.forEach((vidComments, videoName) => {
+        text += `    · ${videoName}\n`;
+        vidComments.forEach(c => {
+          text += `      [${c.timestamp != null ? formatVideoTimestamp(c.timestamp) : ''}] ${c.content}\n`;
+        });
+      });
     });
   } else {
     text += `【视频点评摘要】\n  暂无记录\n`;
@@ -263,7 +280,31 @@ export default function Reports() {
                 <div className="bg-[var(--bg)] rounded-lg p-3">
                   <div className="text-sm font-medium text-[var(--navy)] flex items-center gap-1"><Video size={14} />视频点评摘要 ({previewReport.videoComments?.length ?? 0}条)</div>
                   {previewReport.videoComments?.length > 0 ? (
-                    <div className="mt-1">{previewReport.videoComments.slice(0, 6).map((c: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)]">{students.find(s => s.id === c.studentId)?.name || '未知'} - {c.videoFilename} [{formatVideoTimestamp(c.timestamp)}]: {c.content?.slice(0, 80)}</div>)}</div>
+                    <div className="mt-1">
+                      {(() => {
+                        const byStudent = new Map<string, any[]>();
+                        previewReport.videoComments.forEach((c: any) => {
+                          const sName = students.find(s => s.id === c.studentId)?.name || '未知';
+                          if (!byStudent.has(sName)) byStudent.set(sName, []);
+                          byStudent.get(sName)!.push(c);
+                        });
+                        return Array.from(byStudent.entries()).map(([sName, comments]) => (
+                          <div key={sName} className="mb-1">
+                            <div className="text-xs font-medium text-[var(--navy)]">▶ {sName}</div>
+                            {(() => {
+                              const byVideo = new Map<string, any[]>();
+                              comments.forEach(c => { const vName = c.videoFilename || '未知视频'; if (!byVideo.has(vName)) byVideo.set(vName, []); byVideo.get(vName)!.push(c); });
+                              return Array.from(byVideo.entries()).map(([vName, vComments]) => (
+                                <div key={vName} className="ml-3">
+                                  <div className="text-[10px] text-[var(--text-muted)]">· {vName}</div>
+                                  {vComments.slice(0, 4).map((c: any, i: number) => <div key={i} className="text-xs text-[var(--text-light)] ml-5">[{c.timestamp != null ? formatVideoTimestamp(c.timestamp) : ''}] {c.content?.slice(0, 60)}</div>)}
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        ));
+                      })()}
+                    </div>
                   ) : (
                     <div className="text-xs text-[var(--text-light)] mt-1">暂无记录</div>
                   )}
